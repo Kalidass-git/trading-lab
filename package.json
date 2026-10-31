@@ -1,0 +1,26 @@
+{
+  "name": "trading-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Trading Lab: a paper-trading simulator. Installable web app (no build step) plus an Android shell (Capacitor).",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run-all.mjs",
+    "android:sync": "node scripts/sync-web.mjs && cap sync android",
+    "android:open": "cap open android",
+    "android:debug": "npm run android:sync && node scripts/gradle.mjs assembleDebug",
+    "android:release": "npm run android:sync && node scripts/gradle.mjs assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/splash-screen": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

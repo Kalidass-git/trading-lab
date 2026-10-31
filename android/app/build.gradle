@@ -1,0 +1,82 @@
+apply plugin: 'com.android.application'
+
+// The app version follows the web app (js/version.js), so one number rules both.
+// 1.0.0 -> versionName "1.0.0", versionCode 10000 (Android needs a number that only goes up).
+def webVersion = [1, 0, 0]
+try {
+    def m = (file('../../js/version.js').text =~ /VERSION\s*=\s*'(\d+)\.(\d+)\.(\d+)'/)
+    if (m.find()) webVersion = [m.group(1) as int, m.group(2) as int, m.group(3) as int]
+} catch (Exception e) {
+    logger.warn("Could not read js/version.js, using the built-in version number")
+}
+
+// Optional: sign the release APK with your own key. Put the details in android/keystore.properties (never commit it):
+//   storeFile=../trading-lab.jks   storePassword=...   keyAlias=trading-lab   keyPassword=...
+def ksFile = rootProject.file('keystore.properties')
+def ksProps = new Properties()
+if (ksFile.exists()) ksFile.withInputStream { ksProps.load(it) }
+
+android {
+    namespace = "com.tradinglab.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.tradinglab.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode webVersion[0] * 10000 + webVersion[1] * 100 + webVersion[2]
+        versionName "${webVersion[0]}.${webVersion[1]}.${webVersion[2]}"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (ksFile.exists()) {
+                storeFile file(ksProps['storeFile'])
+                storePassword ksProps['storePassword']
+                keyAlias ksProps['keyAlias']
+                keyPassword ksProps['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // With no keystore.properties the release build is signed with the debug key, so it still installs.
+            signingConfig ksFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

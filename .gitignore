@@ -1,0 +1,18 @@
+# Private data: never upload
+*backup*.json
+trading-lab-data.json
+*.xlsx
+*.csv
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+.clasp.json
+.clasprc.json
+# Build leftovers
+node_modules/
+*.zip
+/www/
+.DS_Store
+Thumbs.db
