@@ -79,10 +79,10 @@ const short = (v) => {
 /**
  * Line chart. series: [{name, values:[n|null], dashed}] ; labels: x labels (same length).
  */
-export function lineChart({ labels, series, fmt = (v) => v, height = 220, yMin, area = false, width, tipLabels }) {
+export function lineChart({ labels, series, fmt = (v) => v, height = 220, yMin, yMax, area = false, width, tipLabels }) {
   const W = width || defaultWidth(), H = height, pad = { l: 44, r: 12, t: 12, b: 24 };
   const all = series.flatMap((s) => s.values).filter((v) => v != null);
-  const lo = yMin ?? Math.min(0, ...all), hi = niceMax(Math.max(...all, 1));
+  const lo = yMin ?? Math.min(0, ...all), hi = yMax ?? niceMax(Math.max(...all, 1));
   const x = (i) => pad.l + (labels.length < 2 ? 0 : (i / (labels.length - 1)) * (W - pad.l - pad.r));
   const y = (v) => pad.t + (1 - (v - lo) / (hi - lo || 1)) * (H - pad.t - pad.b);
   const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': series.map((s) => s.name).join(' and ') });
@@ -277,4 +277,80 @@ export function stackedArea({ labels, series, fmt = (v) => v, height = 240, widt
     });
   }
   return h('div', { class: 'chart-box' }, root, series.length > 1 ? h('ul', { class: 'legend inline' }, series.map((s, i) => h('li', onSelect ? { style: { cursor: 'pointer' }, onclick: () => onSelect(s) } : null, h('i', { style: { background: col(s, i) } }), h('span', { class: 'lg-name' }, s.name)))) : null);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const shortDate = (d, long) => (long ? `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(2, 4)}` : `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`);
+const price2 = (v) => (v >= 1000 ? Math.round(v).toLocaleString('en-IN') : v.toFixed(2));
+const niceTicks = (lo, hi, n = 5) => { const span = hi - lo || 1, raw = span / (n - 1), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p, step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p, a = Math.floor(lo / step) * step, t = []; for (let v = a; v <= hi + step * 0.5; v += step) t.push(+v.toFixed(8)); return t; };
+
+/**
+ * Price chart for a share: line or candles, volume underneath, optional moving averages, the person's own buys and sells as markers and a dashed
+ * line at their average cost. hist = { d, o, h, l, c, v } (already cut to the range); overlays = [{ name, values (same length as hist.d), color, dash }];
+ * trades = [{ date, side: 'buy'|'sell', qty, price }]. Candles are drawn up to 260 days; longer ranges fall back to a line.
+ */
+export function priceChart({ hist, mode = 'line', overlays = [], trades = [], avgCost = null, height = 320, width }) {
+  const n = hist.d.length, W = width || (typeof window !== 'undefined' && window.innerWidth < 640 ? 400 : 920), H = height, pad = { l: 54, r: 10, t: 10, b: 24 }, volH = Math.round(H * 0.17), top = pad.t, bot = H - pad.b - volH - 6;
+  const candles = mode === 'candle' && n <= 260;
+  const lows = candles ? hist.l : hist.c, highs = candles ? hist.h : hist.c;
+  let lo = Math.min(...lows), hi = Math.max(...highs);
+  for (const o of overlays) for (const v of o.values) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (avgCost > 0) { lo = Math.min(lo, avgCost); hi = Math.max(hi, avgCost); }
+  const padv = (hi - lo) * 0.06 || hi * 0.02 || 1; lo -= padv; hi += padv;
+  const x = (i) => pad.l + (n < 2 ? 0 : (i / (n - 1)) * (W - pad.l - pad.r)), y = (v) => top + (1 - (v - lo) / (hi - lo || 1)) * (bot - top);
+  const maxV = Math.max(1, ...hist.v), vy = (v) => H - pad.b - (v / maxV) * volH;
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart price-chart', role: 'img', 'aria-label': 'Price chart' });
+  for (const t of niceTicks(lo, hi)) { if (t < lo || t > hi) continue; root.append(svg('line', { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), class: 'grid' }), svg('text', { x: pad.l - 6, y: y(t) + 3.5, class: 'axis', 'text-anchor': 'end' }, price2(t))); }
+  const long = n > 160, step = Math.max(1, Math.ceil(n / 6));
+  for (let i = 0; i < n; i += step) if (n - 1 - i >= step * 0.6 || i === 0) root.append(svg('text', { x: x(i), y: H - 6, class: 'axis', 'text-anchor': i === 0 ? 'start' : 'middle' }, shortDate(hist.d[i], long)));
+  const up = hist.c[n - 1] >= hist.c[0], tone = up ? 'var(--pos)' : 'var(--neg)';
+  const bw = Math.max(1, Math.min(10, ((W - pad.l - pad.r) / Math.max(1, n)) * 0.7));
+  hist.v.forEach((v, i) => { if (v > 0) root.append(svg('rect', { x: x(i) - bw / 2, y: vy(v), width: bw, height: Math.max(0.5, H - pad.b - vy(v)), fill: (hist.c[i] >= (i ? hist.c[i - 1] : hist.o[i])) ? 'var(--pos)' : 'var(--neg)', opacity: '.28' })); });
+  if (candles) {
+    hist.d.forEach((_, i) => { const u = hist.c[i] >= hist.o[i], col = u ? 'var(--pos)' : 'var(--neg)', t = y(Math.max(hist.o[i], hist.c[i])), b = y(Math.min(hist.o[i], hist.c[i]));
+      root.append(svg('line', { x1: x(i), x2: x(i), y1: y(hist.h[i]), y2: y(hist.l[i]), stroke: col, 'stroke-width': 1 }), svg('rect', { x: x(i) - bw / 2, y: t, width: bw, height: Math.max(1, b - t), fill: col })); });
+  } else {
+    const d = hist.c.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+    root.append(svg('path', { d: d + `L${x(n - 1)},${bot}L${x(0)},${bot}Z`, fill: tone, opacity: '.10' }), svg('path', { d, fill: 'none', stroke: tone, 'stroke-width': 1.8, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  }
+  for (const o of overlays) { let d = '', on = false; o.values.forEach((v, i) => { if (v == null) { on = false; return; } d += `${on ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`; on = true; }); if (d) root.append(svg('path', { d, fill: 'none', stroke: o.color, 'stroke-width': 1.5, 'stroke-dasharray': o.dash || null, opacity: '.9' })); }
+  if (avgCost > 0) root.append(svg('line', { x1: pad.l, x2: W - pad.r, y1: y(avgCost), y2: y(avgCost), stroke: 'var(--gold)', 'stroke-width': 1.2, 'stroke-dasharray': '6 4' }), svg('text', { x: W - pad.r - 2, y: y(avgCost) - 4, class: 'axis', 'text-anchor': 'end', fill: 'var(--gold)', style: 'fill:var(--gold)' }, 'Your average ' + price2(avgCost)));
+  // the person's own orders
+  const byIdx = new Map();
+  for (const t of trades) { const i = hist.d.findIndex((d) => d >= t.date); if (i < 0 || (i === 0 && t.date < hist.d[0])) continue; (byIdx.get(i) || byIdx.set(i, []).get(i)).push(t); }
+  for (const [i, list] of byIdx) { const buy = list.some((t) => t.side === 'buy'), sell = list.some((t) => t.side === 'sell'), cx = x(i), cy = y(list[0].price);
+    if (buy) root.append(svg('path', { d: `M${cx},${cy + 3}l-6,10h12z`, fill: 'var(--pos)', stroke: 'var(--surface)', 'stroke-width': 1 }));
+    if (sell) root.append(svg('path', { d: `M${cx},${cy - 3}l-6,-10h12z`, fill: 'var(--neg)', stroke: 'var(--surface)', 'stroke-width': 1 })); }
+  const cross = svg('line', { y1: top, y2: H - pad.b, class: 'cross', style: 'display:none' });
+  root.append(cross);
+  const hit = svg('rect', { x: pad.l, y: top, width: W - pad.l - pad.r, height: H - pad.b - top, fill: 'transparent' });
+  hit.addEventListener('pointermove', (e) => {
+    const r = root.getBoundingClientRect(), px = ((e.clientX - r.left) / r.width) * W, i = Math.max(0, Math.min(n - 1, Math.round(((px - pad.l) / (W - pad.l - pad.r)) * (n - 1))));
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.style.display = '';
+    const prev = i ? hist.c[i - 1] : hist.o[i], ch = prev ? hist.c[i] / prev - 1 : 0;
+    showTip(e, [h('b', null, hist.d[i]), h('div', null, `Open ${price2(hist.o[i])} · High ${price2(hist.h[i])}`), h('div', null, `Low ${price2(hist.l[i])} · Close ${price2(hist.c[i])}`),
+      h('div', { class: ch >= 0 ? 'pos' : 'neg' }, `${ch >= 0 ? '▲ +' : '▼ '}${(ch * 100).toFixed(2)}% on the day`), h('div', { class: 'muted' }, `Volume ${Math.round(hist.v[i]).toLocaleString('en-IN')}k`),
+      ...overlays.filter((o) => o.values[i] != null).map((o) => h('div', null, h('i', { class: 'tip-dot', style: { background: o.color } }), `${o.name}: ${price2(o.values[i])}`)),
+      ...(byIdx.get(i) || []).map((t) => h('div', { class: t.side === 'buy' ? 'pos' : 'neg' }, `You ${t.side === 'buy' ? 'bought' : 'sold'} ${t.qty} at ${price2(t.price)}`))]);
+  });
+  hit.addEventListener('pointerleave', () => { cross.style.display = 'none'; hideTip(); });
+  root.append(hit);
+  const legend = [...overlays.map((o) => [o.name, o.color]), ...(trades.length ? [['Your buys ▲ / sells ▼', 'var(--ink)']] : []), ...(avgCost > 0 ? [['Your average cost', 'var(--gold)']] : [])];
+  return h('div', { class: 'chart-box' }, root, legend.length ? h('ul', { class: 'legend inline' }, legend.map(([name, col]) => h('li', null, h('i', { style: { background: col } }), h('span', { class: 'lg-name' }, name)))) : null);
+}
+
+/** Columns above and below a zero line, green for gains and red for losses. items: [{ label, value, title }]. */
+export function signedBars({ items, fmt = (v) => v, height = 200, width }) {
+  const W = width || defaultWidth(), H = height, pad = { l: 44, r: 8, t: 10, b: 24 }, n = items.length;
+  const hi = Math.max(1, ...items.map((i) => i.value)), lo = Math.min(0, ...items.map((i) => i.value)), top = niceMax(hi), bottom = lo < 0 ? -niceMax(-lo) : 0;
+  const y = (v) => pad.t + (1 - (v - bottom) / (top - bottom || 1)) * (H - pad.t - pad.b), gw = (W - pad.l - pad.r) / Math.max(1, n), bw = Math.min(34, gw - 6);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': 'Profit and loss by period' });
+  for (const t of niceTicks(bottom, top, 5)) { if (t < bottom - 1e-9 || t > top + 1e-9) continue; root.append(svg('line', { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), class: t === 0 ? 'cross' : 'grid' }), svg('text', { x: pad.l - 6, y: y(t) + 3.5, class: 'axis', 'text-anchor': 'end' }, short(t))); }
+  const every = Math.max(1, Math.ceil(n / 8));
+  items.forEach((it, i) => {
+    const cx = pad.l + gw * i + gw / 2, y0 = y(0), y1 = y(it.value), r = svg('rect', { x: cx - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), fill: it.value >= 0 ? 'var(--pos)' : 'var(--neg)', rx: 2 });
+    hover(r, () => [h('b', null, it.title || it.label), h('div', { class: it.value >= 0 ? 'pos' : 'neg' }, fmt(it.value))]); root.append(r);
+    if (i % every === 0) root.append(svg('text', { x: cx, y: H - 6, class: 'axis', 'text-anchor': 'middle' }, it.label));
+  });
+  return h('div', { class: 'chart-box' }, root);
 }

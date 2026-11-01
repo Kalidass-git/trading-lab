@@ -7,7 +7,7 @@ import { h, money, pct, num, dateStr, section, table, btn, dialog, formDialog, r
 import { LAB, selBooks, activeAccounts, tone, signedRs, rerender, quote, rs2, run, today, field, selectOf } from './lab-shared.js';
 import { snap, accountForm } from './lab-trade.js';
 
-const INDEX = { NIFTY: '^NSEI', BANKNIFTY: '^NSEBANK', SENSEX: '^BSESN' };
+const INDEX = MK.INDEX;
 const SRC = { manual: 'you entered', model: 'estimated', intrinsic: 'at expiry' };
 const spotOf = (u) => { const q = quote(u); return q && q.price > 0 ? q.price : null; };
 const yahooOf = (u) => INDEX[String(u).toUpperCase()] || '';

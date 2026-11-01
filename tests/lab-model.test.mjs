@@ -79,4 +79,21 @@ ok(/on or after its expiry/.test(throws(() => M.addTxn(l5, { acct: 'e', type: 'o
 M.addTxn(l5, { acct: 'e', type: 'oexp', date: '2026-11-25', qty: 75, price: 0, opt });
 r5 = M.replay(l5.txns);
 ok(r5.options.length === 0 && Math.abs(r5.realizedOpt - (75 * 160 - 15040 / 2 - 15040 / 2)) < 1e-9, 'an option that expires worthless loses the rest of its premium');
+// back-dated orders: the starting capital is dated the day the account was made, so an earlier trade has no money yet
+const lb = M.emptyLab(); lb.accounts.push({ id: 'b1', name: 'Back', archived: false, fees: {} });
+M.addTxn(lb, { acct: 'b1', type: 'deposit', date: '2026-10-31', amount: 100000, note: 'Starting capital' });
+const msg = throws(() => M.addTxn(lb, { acct: 'b1', type: 'buy', date: '2026-06-01', symbol: 'TCS', qty: 10, price: 3500 }));
+ok(/not enough cash/.test(msg) && /2026-10-31/.test(msg) && /Move the account/.test(msg), 'a buy before the money arrived says when the money was added and what to do');
+ok(M.startDate(lb.txns) === '2026-10-31' && M.cashOn(lb.txns, '2026-06-01') === 0 && M.cashOn(lb.txns, '2026-10-31') === 100000, 'cash on a date, and the account start date');
+M.moveStart(lb, 'b1', '2026-01-01');
+M.addTxn(lb, { acct: 'b1', type: 'buy', date: '2026-06-01', symbol: 'TCS', qty: 10, price: 3500 });
+ok(M.replay(lb.txns).cash === 65000 && !M.replay(lb.txns).errors.length, 'after moving the start date back, the back-dated buy works');
+ok(/Cannot move/.test(throws(() => M.moveStart(lb, 'b1', '2026-12-01'))) && M.startDate(lb.txns) === '2026-01-01', 'moving the start date past an existing trade is refused and leaves it unchanged');
+// a deposit added later but dated the same day still funds that day's buys
+const ld = M.emptyLab(); ld.accounts.push({ id: 'd1', name: 'Same', archived: false, fees: {} });
+M.addTxn(ld, { acct: 'd1', type: 'deposit', date: '2026-10-01', amount: 1000 });
+M.addTxn(ld, { acct: 'd1', type: 'buy', date: '2026-10-05', symbol: 'A', qty: 1, price: 900 });
+M.addTxn(ld, { acct: 'd1', type: 'deposit', date: '2026-10-05', amount: 5000 });
+M.addTxn(ld, { acct: 'd1', type: 'buy', date: '2026-10-05', symbol: 'B', qty: 4, price: 1000 });
+ok(M.replay(ld.txns).cash === 1000 + 5000 - 900 - 4000, 'deposits are played before the same day’s orders');
 console.log(bad ? bad + ' failed' : 'all passed'); process.exit(bad ? 1 : 0);
