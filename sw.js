@@ -1,5 +1,5 @@
 // Offline shell: the app files are cached; trades live in the browser's storage, so the last synced numbers show without internet.
-const CACHE = 'trading-lab-v1';
+const CACHE = 'trading-lab-v2';
 const FILES = ['./',
   './index.html',
   './css/app.css',
@@ -20,9 +20,11 @@ const FILES = ['./',
   './js/ui.js',
   './js/version.js',
   './js/lab/book.js',
+  './js/lab/history.js',
   './js/lab/market.js',
   './js/lab/model.js',
   './js/lab/options.js',
+  './js/lab/perf.js',
   './js/lab/time.js',
   './js/lab/xlsxout.js',
   './js/views/accounts.js',
@@ -33,7 +35,9 @@ const FILES = ['./',
   './js/views/options.js',
   './js/views/reports.js',
   './js/views/settings.js',
-  './js/views/stocks.js'];
+  './js/views/stock.js',
+  './js/views/stocks.js',
+  './js/views/insights.js'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

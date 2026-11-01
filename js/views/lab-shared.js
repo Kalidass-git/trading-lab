@@ -4,7 +4,7 @@ import * as M from '../lab/model.js';
 import * as MK from '../lab/market.js';
 import * as BK from '../lab/book.js';
 import { istDate } from '../lab/time.js';
-import { h, toast, money, dec, isMasked } from '../ui.js';
+import { h, toast, money, dec, isMasked, pct } from '../ui.js';
 
 export const LAB = () => S.data || M.emptyLab();
 const savedAcct = () => { try { return localStorage.getItem('tl.acct') || 'all'; } catch { return 'all'; } };
@@ -35,3 +35,26 @@ export const tone = (n) => (n > 0.005 ? 'pos' : n < -0.005 ? 'neg' : '');
 export const signedRs = (n) => (n > 0.005 ? '+' : '') + money(n);
 export const field = (label, input, hint) => h('label', { class: 'field' }, h('span', null, label), input, hint ? h('small', null, hint) : null);
 export const selectOf = (options, value, attrs = {}) => { const s = h('select', attrs); for (const o of options) { const x = typeof o === 'object' ? o : { value: o, label: o }; s.append(h('option', { value: x.value, selected: String(x.value) === String(value) }, x.label)); } return s; };
+
+// ---------- profit and loss display: one look everywhere (green up, red down, an arrow, an explicit sign) ----------
+const toneR = (r) => (r > 0.00005 ? 'pos' : r < -0.00005 ? 'neg' : '');
+export const arrow = (n) => (n > 0.005 ? '▲' : n < -0.005 ? '▼' : '');
+/** Profit or loss in rupees, coloured with an arrow: ▲ +₹1,200 / ▼ -₹800. */
+export const plRs = (n) => h('span', { class: 'pl ' + tone(n) }, arrow(n) ? arrow(n) + ' ' : '', signedRs(n));
+/** A return as a percentage, coloured with an arrow. `ratio` is 0.052 for 5.2%. */
+export const plPct = (ratio, d = 1) => (ratio == null || isNaN(ratio) ? h('span', { class: 'muted' }, '–') : h('span', { class: 'pl ' + toneR(ratio) }, toneR(ratio) ? (ratio > 0 ? '▲ +' : '▼ ') : '', pct(ratio, d)));
+/** The same as a tinted pill, for a day's change next to a price. */
+export const chg = (ratio, d = 2) => (ratio == null || isNaN(ratio) ? h('span', { class: 'muted' }, '–') : h('span', { class: 'chg ' + toneR(ratio) }, toneR(ratio) ? (ratio > 0 ? '▲ +' : '▼ ') : '', pct(ratio, d)));
+/** Rupees and percentage together, the way trading apps show a position's result. */
+export const plBoth = (rs, ratio, d = 1) => h('span', { class: 'pl2' }, h('b', { class: tone(rs) }, arrow(rs) ? arrow(rs) + ' ' : '', signedRs(rs)), h('small', { class: toneR(ratio) }, (ratio > 0 ? '+' : '') + pct(ratio, d)));
+export const stockHref = (sym) => '#/stock/' + encodeURIComponent(String(sym).toUpperCase());
+export const openStock = (sym) => { location.hash = stockHref(sym); };
+/** Where a price sits between two levels (52-week low and high): a thin bar with a marker. */
+export const rangeBar = (low, high, value) => {
+  if (!(low > 0) || !(high > low) || !(value > 0)) return h('span', { class: 'muted' }, '–');
+  const p = Math.max(0, Math.min(1, (value - low) / (high - low)));
+  return h('span', { class: 'rbar', title: `Low ${dec(low, 2)} · now ${dec(value, 2)} · High ${dec(high, 2)}` }, h('i', { style: { left: (p * 100).toFixed(1) + '%' } }));
+};
+export const ratioOf = (a, b) => (b > 0 ? a / b - 1 : null);
+/** 12,34,56,789 as crores: ₹5,000 Cr. For market capitalisation and other very large figures. */
+export const crore = (n) => (n == null || isNaN(n) ? '–' : isMasked() ? '₹ ••••' : n >= 1e7 ? '₹' + Math.round(n / 1e7).toLocaleString('en-IN') + ' Cr' : '₹' + Math.round(n).toLocaleString('en-IN'));

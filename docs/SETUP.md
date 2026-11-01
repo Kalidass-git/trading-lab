@@ -36,6 +36,10 @@ The debug APK is at `android/app/build/outputs/apk/debug/app-debug.apk`. For a r
 
 The app id is `com.tradinglab.app`. The version code comes from `js/version.js`: raise `VERSION` before each new build so Android accepts it as an update.
 
+## Updating the backend (when a new version adds features)
+
+Paste the new `backend/Code.gs` over the old code, save, then **Deploy > Manage deployments > pencil > Version: New version > Deploy**. The /exec URL and the key stay the same. Version 1.1 needs this for price history and company figures.
+
 ## Prices
 
-Prices come through your backend from Yahoo Finance (free, unofficial). Indian shares try `SYMBOL.NS` then `SYMBOL.BO`. For anything else type the Yahoo ticker as the symbol (for example `AAPL` or `^NSEI`). Without a connected backend you can still trade at your own price.
+Prices come through your backend from Yahoo Finance (free, unofficial). Indian shares try `SYMBOL.NS` then `SYMBOL.BO`. For anything else type the Yahoo ticker as the symbol (for example `AAPL` or `^NSEI`). Without a connected backend you can still trade at your own price. Nothing is fetched automatically: press *Refresh prices* (or pull down on Android) when you want current prices. Chart history and company figures load per share with *Load chart & fundamentals* on its page.

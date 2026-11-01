@@ -32,7 +32,10 @@ export function feeFor(fees, value) {
 }
 /** Gross value of an order line in paise. */
 export const grossP = (t) => toP(Number(t.qty) * Number(t.price));
-const cmp = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.ts || '') < (b.ts || '') ? -1 : (a.ts || '') > (b.ts || '') ? 1 : 0);   // equal date and time keep the order they were added
+// Same day: money coming in (deposits) is played first, so a deposit added later but dated the same day still funds that day's buys.
+// After that, equal date and time keep the order they were added.
+const rank = (t) => (t.type === 'deposit' ? 0 : 1);
+const cmp = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : rank(a) - rank(b) || ((a.ts || '') < (b.ts || '') ? -1 : (a.ts || '') > (b.ts || '') ? 1 : 0));
 export const sortTxns = (txns) => txns.slice().sort(cmp);
 
 /**
@@ -53,7 +56,11 @@ export function replay(txns, { today = '' } = {}) {
       const isO = t.type === 'obuy', g = grossP(t), p = touch(isO ? opt : pos, isO ? optKey(t.opt) : String(t.symbol).toUpperCase(), isO ? { key: optKey(t.opt), ...t.opt, name: t.name } : { symbol: String(t.symbol).toUpperCase(), name: t.name, yahoo: t.yahoo });
       cash -= g + fp; feesP += fp; p.qty += Number(t.qty); p.costP += g + fp;
       if (t.date === today) { p.qtyToday += Number(t.qty); p.costTodayP += g; }
-      if (cash < 0) errors.push(`${t.date}: not enough cash for ${t.symbol || t.name}`);
+      if (cash < 0) {
+        const have = fromP(cash + g + fp), later = txns.filter((d) => d.type === 'deposit' && d.date > t.date).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+        errors.push(`${t.date}: not enough cash for ${t.symbol || t.name}: it needs ₹${fromP(g + fp).toFixed(2)} but the account had ₹${Math.max(0, have).toFixed(2)} on that date.`
+          + (later ? ` Money was added only from ${later.date}. Move the account's start date back to ${t.date} (or earlier) to trade on that day.` : ''));
+      }
     } else if (t.type === 'sell' || t.type === 'osell' || t.type === 'oexp') {
       const isO = t.type !== 'sell', key = isO ? optKey(t.opt) : String(t.symbol).toUpperCase(), m = isO ? opt : pos, p = m.get(key), q = Number(t.qty);
       if (!p || p.qty < q - 1e-9) { errors.push(`${t.date}: selling ${q} of ${t.symbol || t.name} but only ${p ? p.qty : 0} held`); rows.push(row); continue; }
@@ -113,6 +120,24 @@ export function normalise(i) {
     o.symbol = String(i.symbol).toUpperCase(); o.name = i.name || o.symbol; o.yahoo = i.yahoo || '';
   }
   return o;
+}
+
+/** Cash in an account at the end of `date` (all transactions dated on or before it). */
+export const cashOn = (txns, date) => replay(txns.filter((t) => t.date <= date)).cash;
+/** The date money first reached the account (its earliest deposit), or '' when nothing was ever deposited. */
+export const startDate = (txns) => txns.filter((t) => t.type === 'deposit').map((t) => t.date).sort()[0] || '';
+/**
+ * Moves the account's starting capital (its earliest deposit) to `date`, so trades can be dated from then.
+ * Moving earlier only ever adds cash sooner, so the ledger still plays through; moving later is checked like any other change.
+ */
+export function moveStart(lab, acctId, date) {
+  if (!/^\d{4}-\d\d-\d\d$/.test(date || '')) throw new Error('Enter a valid date.');
+  const mine = lab.txns.filter((t) => t.acct === acctId), first = mine.filter((t) => t.type === 'deposit').sort(cmp)[0];
+  if (!first) throw new Error('This account has no starting capital to move.');
+  const before = first.date; first.date = date;
+  const rp = replay(mine);
+  if (rp.errors.length) { first.date = before; throw new Error('Cannot move the start date: ' + rp.errors[0]); }
+  return first;
 }
 
 /** Cash needed for / received from an order: { gross, fees, total } where total is what leaves (buy) or arrives (sell). */

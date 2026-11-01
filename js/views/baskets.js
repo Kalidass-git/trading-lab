@@ -35,7 +35,7 @@ function basketForm(bk) {
     if (Math.abs(items.reduce((a, i) => a + i.weight, 0) - 100) > 0.005) return toast('Weights must add up to exactly 100%.', 'bad');
     if (LAB().baskets.some((b) => b.name.toLowerCase() === nm.toLowerCase() && (!bk || b.id !== bk.id))) return toast('You already have a basket with this name.', 'bad');
     const old = bk ? new Map(bk.items.map((i) => [i.symbol, i])) : new Map();
-    if (run((l) => { const rec = { name: nm, items: items.map((i) => ({ ...i, name: (old.get(i.symbol) || {}).name || '', yahoo: (old.get(i.symbol) || {}).yahoo || '' })) }; if (isNew) l.baskets.push({ id: M.newId('lb'), createdAt: new Date().toISOString(), ...rec }); else Object.assign(l.baskets.find((x) => x.id === bk.id), rec); }, isNew ? 'Basket created' : 'Saved')) { c(); rerender(); MK.refresh(LAB()).then(() => rerender()).catch(() => {}); }
+    if (run((l) => { const rec = { name: nm, items: items.map((i) => ({ ...i, name: (old.get(i.symbol) || {}).name || '', yahoo: (old.get(i.symbol) || {}).yahoo || '' })) }; if (isNew) l.baskets.push({ id: M.newId('lb'), createdAt: new Date().toISOString(), ...rec }); else Object.assign(l.baskets.find((x) => x.id === bk.id), rec); }, isNew ? 'Basket created' : 'Saved')) { c(); rerender(); toast('Press “Refresh prices” to get prices for the new shares.'); }
   } });
   dialog(isNew ? 'New basket' : 'Edit ' + bk.name, body, actions);
 }
