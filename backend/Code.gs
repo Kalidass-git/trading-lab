@@ -92,6 +92,8 @@ function doPost(e) {
       }
       case 'quotes': return json_(quotes_(req.symbols || []));
       case 'detail': return json_(detail_(req));
+      case 'fundsearch': return json_(fundsearch_(req));
+      case 'fundnav': return json_(fundnav_(req));
       default: return json_({ error: 'Unknown action.' });
     }
   } catch (err) {
@@ -225,4 +227,39 @@ function detail_(req) {
     try { out.fundamentals = fundamentals_(out.ticker); } catch (e) { out.notes.push(String(e.message || e)); }
   }
   return out;
+}
+
+// ---------- mutual funds (NAV history from the free mfapi.in service, which republishes AMFI data) ----------
+/** Search funds by name. req = { q: 'parag parikh flexi' }. Returns { funds: [{ code, name }] } (at most 30). */
+function fundsearch_(req) {
+  var q = String(req.q || '').replace(/\s+/g, ' ').trim();
+  if (q.length < 3) return { error: 'Type at least 3 letters of the fund name.' };
+  var r = UrlFetchApp.fetch('https://api.mfapi.in/mf/search?q=' + encodeURIComponent(q), { muteHttpExceptions: true, headers: { 'User-Agent': UA_ } });
+  if (r.getResponseCode() !== 200) return { error: 'The fund service did not answer (code ' + r.getResponseCode() + ').' };
+  var list;
+  try { list = JSON.parse(r.getContentText()); } catch (e) { return { error: 'The fund service sent something unreadable.' }; }
+  if (!Array.isArray(list)) return { error: 'The fund service sent something unexpected.' };
+  return { ok: true, funds: list.slice(0, 30).map(function (f) { return { code: String(f.schemeCode), name: String(f.schemeName || '') }; }) };
+}
+/** "dd-mm-yyyy" to "yyyy-mm-dd" (null if it is not a date). */
+function isoFromDmy_(s) {
+  var m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(s || ''));
+  return m ? m[3] + '-' + m[2] + '-' + m[1] : null;
+}
+/** Full NAV history of one fund, oldest first. req = { code }. Returns { code, name, house, category, type, d: [dates], c: [NAV] }. */
+function fundnav_(req) {
+  var code = String(req.code || '').replace(/[^0-9]/g, '');
+  if (!code) return { error: 'No fund code given.' };
+  var r = UrlFetchApp.fetch('https://api.mfapi.in/mf/' + code, { muteHttpExceptions: true, headers: { 'User-Agent': UA_ } });
+  if (r.getResponseCode() !== 200) return { error: 'The fund service has no fund with code ' + code + ' (code ' + r.getResponseCode() + ').' };
+  var j;
+  try { j = JSON.parse(r.getContentText()); } catch (e) { return { error: 'The fund service sent something unreadable.' }; }
+  var rows = (j && j.data) || [];
+  if (!rows.length) return { error: 'The fund service has no NAV history for code ' + code + '.' };
+  var pairs = [];
+  rows.forEach(function (x) { var d = isoFromDmy_(x.date), n = Number(x.nav); if (d && n > 0) pairs.push([d, Math.round(n * 10000) / 10000]); });
+  pairs.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });   // the service lists newest first
+  var m = j.meta || {};
+  return { ok: true, code: code, name: String(m.scheme_name || ''), house: String(m.fund_house || ''), category: String(m.scheme_category || ''), type: String(m.scheme_type || ''),
+    d: pairs.map(function (p) { return p[0]; }), c: pairs.map(function (p) { return p[1]; }) };
 }

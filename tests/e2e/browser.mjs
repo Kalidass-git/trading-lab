@@ -47,12 +47,12 @@ try {
   const n0 = calls.length; await page.goto('http://localhost:8099/#/stock/TCS'); await page.waitForSelector('.trade-panel'); await page.waitForTimeout(300);
   ok(calls.length === n0, 'opening a share page fetches nothing by itself');
   await page.screenshot({ path: SP + '/04-stock-nochart.png', fullPage: true });
-  await page.click('text=Load chart & fundamentals >> nth=0'); await page.waitForSelector('.price-chart', { timeout: 8000 }); await page.waitForTimeout(300);
+  await page.click('text=Load chart & fundamentals >> nth=0'); await page.waitForSelector('.tc-svg', { timeout: 8000 }); await page.waitForTimeout(300);
   ok(calls.some((c) => c === 'detail:TCS'), 'chart and fundamentals load on the button');
   ok((await page.locator('.kvs .kv').filter({ hasText: 'P/E' }).count()) >= 1 && (await page.locator('.sp-about').count()) === 1, 'fundamentals shown (P/E, sector)');
   ok(!/\bnull\b|undefined|NaN/.test(await page.locator('main').innerText()), 'no stray null / undefined / NaN text on the stock page');
   await page.screenshot({ path: SP + '/05-stock-chart.png', fullPage: true });
-  await page.click('.chipopt:has-text("Candles")'); await page.click('.chipopt:has-text("50d")'); await page.click('.chipopt:has-text("3M")'); await page.waitForTimeout(200); await page.screenshot({ path: SP + '/06-stock-candles.png' });
+  await page.click('.tcb-seg button:text-is("Candles")'); await page.click('.tcb-pill:has-text("50d")'); await page.click('.tcb-seg button:text-is("3M")'); await page.waitForTimeout(200); await page.screenshot({ path: SP + '/06-stock-candles.png' });
   // ---- the back-dated buy (the reported bug) ----
   await page.fill('input[aria-label="Quantity"]', '10'); await page.click('.tp-more summary'); await page.fill('input[aria-label="Order date"]', '2026-06-15'); await page.waitForTimeout(250);
   const warn = await page.locator('.tp-note').first().innerText().catch(() => '');
