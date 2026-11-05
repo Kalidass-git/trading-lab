@@ -2,10 +2,13 @@
 import { S } from '../store.js';
 import * as BK from '../lab/book.js';
 import * as P from '../lab/perf.js';
-import { h, money, pct, num, dateStr, section, stat, table, btn, rowList, empty } from '../ui.js';
+import { h, money, pct, num, dec, dateStr, section, stat, table, btn, rowList, empty } from '../ui.js';
 import { lineChart } from '../charts.js';
 import { LAB, st, books, selBooks, tone, signedRs, activeAccounts, setAcct, rerender, quote, rs2, today, plRs, plPct, plBoth, chg, openStock } from './lab-shared.js';
 import { ticket, accountForm } from './lab-trade.js';
+import * as LN from '../lab/lines.js';
+import * as HS from '../lab/history.js';
+import { run } from './lab-shared.js';
 
 let range = '3M';
 const RANGES = [['1W', 7], ['1M', 31], ['3M', 92], ['6M', 183], ['1Y', 366], ['All', 0]];
@@ -31,6 +34,10 @@ export function render() {
     stat('XIRR', xi == null ? '–' : plPct(xi, 1), dd < 90 ? `annualised · only ${dd} days of history` : 'annualised return on money put in'),
     stat('Positions', String(t.positions), `charges paid ${money(t.fees)}`),
     stat('Prices', t.unpriced ? `${t.unpriced} missing` : 'all set', t.unpriced ? 'press Refresh prices' : 'as of your last refresh')));
+
+  // trendline alerts that have fired (only shown when there is one; checked against history already on this device)
+  const hits = LN.fired(lab, (k) => { const r = HS.dataOf(String(k).replace(/^IDX-/, '')); return r && r.hist; }, today());
+  if (hits.length) root.append(section('Trendline alerts', rowList(hits.map(({ line, hit }) => { const idx = String(line.sym).startsWith('IDX-'), name = String(line.sym).replace(/^IDX-/, ''); return { title: `Trendline alert: ${name}`, sub: `A ${hit.bar} candle closed ${hit.dir} your line on ${dateStr(hit.date)} (close ${dec(hit.close, 2)}, line ${dec(hit.level, 2)})`, value: 'Dismiss', onClick: () => run((l) => LN.updateLine(l, line.id, { alert: { ...line.alert, dismissed: today() } })) }; }))));
 
   // performance chart from the daily readings
   const pts = BK.curve(lab, sel.map((b) => b.acct.id));

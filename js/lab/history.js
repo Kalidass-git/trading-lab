@@ -30,12 +30,13 @@ function save(rec) {
  * Fetch quote, history and company figures for one share (one backend call). `yahoo` is the Yahoo ticker for indexes (^NSEI) or foreign shares.
  * Returns the saved record, or throws a plain message. Keeps older company figures when this reply has none.
  */
-export async function load(symbol, { yahoo = '', fundamentals = true, range = '5y' } = {}) {
+export async function load(symbol, { yahoo = '', fundamentals = true, range = null } = {}) {
   if (!S.remote) throw new Error('Price history needs the Google Drive backend. Connect it in Settings.');
-  const sym = String(symbol).toUpperCase(), res = await call(S.cfg.backendUrl, S.cfg.key, 'detail', { symbol: sym, yahoo, fundamentals, range });
+  const sym = String(symbol).toUpperCase(), prev = dataOf(sym), want = range || (prev && prev.range) || '5y';   // a reload keeps the length the person chose (a 10-year index stays 10 years)
+  const res = await call(S.cfg.backendUrl, S.cfg.key, 'detail', { symbol: sym, yahoo, fundamentals, range: want });
   if (res.error) throw new Error(res.error);
   if (!res.history || !res.history.c || !res.history.c.length) throw new Error('No price history came back for ' + sym + '.');
-  const old = dataOf(sym), rec = { symbol: sym, ts: Date.now(), ticker: res.ticker, yahoo, quote: res.quote || null, hist: res.history, fund: res.fundamentals || (old && old.fund) || null, fundTs: res.fundamentals ? Date.now() : (old && old.fundTs) || 0, notes: res.notes || [] };
+  const old = prev, rec = { symbol: sym, range: want, ts: Date.now(), ticker: res.ticker, yahoo, quote: res.quote || null, hist: res.history, fund: res.fundamentals || (old && old.fund) || null, fundTs: res.fundamentals ? Date.now() : (old && old.fundTs) || 0, notes: res.notes || [] };
   if (!save(rec)) throw new Error('This device has no room left to keep the price history. Clear some saved data in Settings.');
   return rec;
 }

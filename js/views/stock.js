@@ -5,13 +5,13 @@ import * as MK from '../lab/market.js';
 import * as HS from '../lab/history.js';
 import * as P from '../lab/perf.js';
 import { S } from '../store.js';
-import { h, money, pct, num, dec, dateStr, section, table, btn, dialog, rowList, empty, route, toast } from '../ui.js';
-import { priceChart } from '../charts.js';
+import { h, money, pct, num, dec, dateStr, section, table, btn, dialog, rowList, empty, route, toast, canEdit } from '../ui.js';
+import * as LN from '../lab/lines.js';
+import * as TK from './chartkit.js';
 import { LAB, books, activeAccounts, rerender, quote, rs2, run, today, ago, chg, plRs, plBoth, plPct, rangeBar, crore } from './lab-shared.js';
 import { tradePanel, deleteTxn } from './lab-trade.js';
 
-const view = { range: '1Y', mode: 'line', ma50: false, ma200: false };
-const RANGES = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
+const view = {};
 let loading = false;
 const symOf = () => decodeURIComponent(route().sub || '').toUpperCase();
 const sameSym = (t, s) => String(t.symbol).toUpperCase() === s;
@@ -25,12 +25,12 @@ function toggleWatch(sym, name) {
   const d = dialog('Watchlists', rowList(lists.map((l) => ({ title: l.name, sub: `${l.items.length} share${l.items.length === 1 ? '' : 's'}`, value: has(l) ? '✓ Watching' : 'Add', tone: has(l) ? 'pos' : '', onClick: () => { if (flip(l.id)) { d.close(); rerender(); } } }))), [{ label: 'Done', onclick: (c) => c() }]);
 }
 
-async function loadData(b, sym, yahoo) {
+async function loadData(b, sym, yahoo, range) {
   if (loading) return;
   if (!S.remote) return toast('Price history needs the Google Drive backend. Connect it in Settings.', 'bad');
   loading = true; b.disabled = true; b.textContent = 'Loading…';
   try {
-    const rec = await HS.load(sym, { yahoo });
+    const rec = await HS.load(sym, { yahoo, range });
     MK.putQuote(sym, rec.quote);
     if (rec.notes && rec.notes.length) toast('Chart loaded. ' + rec.notes[0]);
     else toast(rec.fund ? 'Chart and company figures loaded' : 'Chart loaded');
@@ -42,28 +42,13 @@ const kv = (label, value, sub) => h('div', { class: 'kv' }, h('span', { class: '
 const x = (v, d = 2) => (v == null ? null : dec(v, d));
 const p1 = (v) => (v == null ? null : pct(v, 1));
 
-function chartCard(sym, rec, trades, avgCost) {
-  const box = h('div', { class: 'sp-chart' });
-  const draw = () => {
-    const hist = rec.hist, cut = HS.slice(hist, view.range, today()), full = (n) => HS.sma(hist.c, n).slice(cut.from);
-    const overlays = [];
-    if (view.ma50) overlays.push({ name: '50-day average', values: full(50), color: 'var(--brand)' });
-    if (view.ma200) overlays.push({ name: '200-day average', values: full(200), color: 'var(--gold)', dash: '5 3' });
-    const candles = view.mode === 'candle' && cut.d.length <= 260;
-    const rets = [['1W', 7], ['1M', 31], ['3M', 92], ['6M', 183], ['1Y', 366], ['3Y', 1096]].map(([l, d]) => [l, HS.returnOver(sym, d, today())]).filter(([, r]) => r != null);
-    const chip = (label, on, fn, title) => h('button', { type: 'button', class: 'chipopt' + (on ? ' on' : ''), 'aria-pressed': String(on), title: title || null, onclick: fn }, label);
-    box.replaceChildren(...[
-      h('div', { class: 'sp-ctl' },
-        h('div', { class: 'chipset-inline' }, RANGES.map((r) => chip(r, r === view.range, () => { view.range = r; draw(); }))),
-        h('div', { class: 'chipset-inline' }, chip('Line', view.mode === 'line', () => { view.mode = 'line'; draw(); }), chip('Candles', view.mode === 'candle', () => { view.mode = 'candle'; draw(); }, 'Candles are drawn for up to about a year'),
-          chip('50d', view.ma50, () => { view.ma50 = !view.ma50; draw(); }, '50-day moving average'), chip('200d', view.ma200, () => { view.ma200 = !view.ma200; draw(); }, '200-day moving average'))),
-      priceChart({ hist: cut, mode: view.mode, overlays, trades, avgCost, height: 330 }),
-      view.mode === 'candle' && !candles ? h('p', { class: 'note' }, 'This range has too many days for candles, so a line is shown. Pick 1Y or shorter for candles.') : null,
-      rets.length ? h('div', { class: 'sp-rets' }, rets.map(([l, r]) => h('span', null, h('small', null, l), chg(r, 1)))) : null,
-      h('p', { class: 'note' }, `Daily prices up to ${dateStr(hist.d[hist.d.length - 1])}, loaded ${ago(rec.ts)}. Chart data does not update by itself: press “Reload chart” to bring it up to date.`)].filter(Boolean));
-  };
-  draw();
-  return box;
+/** The trading-style chart (toolbar, zoom, trendlines, full view). Lines are saved with the data as lab.lines; everything else is kept on this device. */
+function chartCard(sym, rec, trades, avgCost, lab, yahoo) {
+  const buys = trades.filter((t) => t.side === 'buy').map((t) => t.date).sort(), once = (fn) => { let id = null; run((l) => { id = fn(l); }); return id; };
+  const store = { add: (ln) => once((l) => LN.addLine(l, sym, ln)), update: (id, patch) => run((l) => LN.updateLine(l, id, patch)), remove: (id) => run((l) => LN.removeLine(l, id), 'Line deleted'), clear: () => run((l) => LN.clearLines(l, sym), 'Lines removed') };
+  const more = !rec.range || rec.range === '5y' ? h('button', { type: 'button', class: 'small', onclick: (e) => loadData(e.currentTarget, sym, yahoo, '10y') }, 'Load 10 years') : null;
+  return h('div', null, TK.chartCard({ key: sym, kind: 'share', hist: rec.hist, today: today(), canEdit: canEdit(), trades, avgCost, firstBuy: buys[0] || null, lines: LN.linesFor(lab, sym), store, priceLabel: 'Close',
+    note: `Daily prices up to ${dateStr(rec.hist.d[rec.hist.d.length - 1])}, loaded ${ago(rec.ts)}. Chart data does not update by itself: press “Reload chart” to bring it up to date.` }), more ? h('p', { class: 'note' }, more, ' Longer history lets you see more years and a longer “My buy” range. It is fetched only when you press the button.') : null);
 }
 
 function statsCard(sym, q, rec) {
@@ -133,7 +118,7 @@ export function render() {
 
   const trades = lab.txns.filter((t) => (t.type === 'buy' || t.type === 'sell') && sameSym(t, sym)).map((t) => ({ date: t.date, side: t.type, qty: t.qty, price: t.price }));
   const bs = books(), held = bs.flatMap((b) => b.v.holdings.filter((p) => p.symbol === sym)), hq = held.reduce((a, p) => a + p.qty, 0), avg = hq ? held.reduce((a, p) => a + p.cost, 0) / hq : null;
-  const chartBlock = rec && rec.hist ? section('Price chart', chartCard(sym, rec, trades, avg)) : section('Price chart', h('div', { class: 'sp-nochart' },
+  const chartBlock = rec && rec.hist ? section('Price chart', chartCard(sym, rec, trades, avg, lab, yahoo)) : section('Price chart', h('div', { class: 'sp-nochart' },
     h('p', null, S.remote ? 'No chart yet. One press brings the last five years of daily prices and the company’s key figures from Yahoo Finance. It is kept on this device and never refreshes by itself.' : 'Charts and company figures need the Google Drive backend. Connect it in Settings.'),
     S.remote ? h('button', { type: 'button', class: 'primary', onclick: (e) => loadData(e.currentTarget, sym, yahoo) }, 'Load chart & fundamentals') : h('a', { class: 'btn primary', href: '#/settings' }, 'Open Settings')));
 

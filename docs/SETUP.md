@@ -37,6 +37,8 @@ The debug APK is at `android/app/build/outputs/apk/debug/app-debug.apk`. For a r
 The app id is `com.tradinglab.app`. The version code comes from `js/version.js`: raise `VERSION` before each new build so Android accepts it as an update.
 
 ## Updating the backend (when a new version adds features)
+Version 1.2 adds `fundsearch` and `fundnav` (mutual funds). Paste the new `backend/Code.gs`, then Deploy > Manage deployments > Edit > New version. Without it the Funds tab says the action is unknown.
+
 
 Paste the new `backend/Code.gs` over the old code, save, then **Deploy > Manage deployments > pencil > Version: New version > Deploy**. The /exec URL and the key stay the same. Version 1.1 needs this for price history and company figures.
 

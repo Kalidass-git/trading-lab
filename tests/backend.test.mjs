@@ -55,4 +55,19 @@ function load(handler) {
   ok(/No price history found/.test(none.error), 'detail: an unknown share gives a plain error');
   ok(load(() => null).ctx.detail_({ symbol: '' }).error === 'No symbol given.', 'detail: a missing symbol is refused');
 }
+// funds: search and NAV history from canned mfapi.in-shaped replies (the real service's shape is assumed from its public docs, not checked from here)
+{
+  const nav = { meta: { fund_house: 'Acme Mutual Fund', scheme_type: 'Open Ended Schemes', scheme_category: 'Equity Scheme - Flexi Cap Fund', scheme_code: 100001, scheme_name: 'Acme Flexi Cap Fund - Direct Plan - Growth' },
+    data: [{ date: '03-11-2026', nav: '151.2345' }, { date: '02-11-2026', nav: '150.5' }, { date: '31-10-2026', nav: 'bad' }, { date: '30-10-2026', nav: '149.9' }], status: 'SUCCESS' };
+  const { ctx, calls } = load((u, o, r) => (u.includes('/mf/search') ? r(200, [{ schemeCode: 100001, schemeName: 'Acme Flexi Cap Fund - Direct Plan - Growth' }, { schemeCode: 100002, schemeName: 'Acme Flexi Cap Fund - Regular Plan' }]) : u.endsWith('/mf/100001') ? r(200, nav) : r(404, '')));
+  const s = ctx.fundsearch_({ q: 'acme flexi' });
+  ok(s.funds.length === 2 && s.funds[0].code === '100001' && /Direct/.test(s.funds[0].name) && calls[0].includes('q=acme%20flexi'), 'fundsearch: codes become text, the query is encoded');
+  ok(ctx.fundsearch_({ q: 'ab' }).error, 'fundsearch: a query under 3 letters is refused without calling the service');
+  const f = ctx.fundnav_({ code: '100001' });
+  ok(f.d.join() === '2026-10-30,2026-11-02,2026-11-03' && f.c.join() === '149.9,150.5,151.2345', 'fundnav: dd-mm-yyyy becomes ISO, oldest first, unreadable rows dropped');
+  ok(f.name.startsWith('Acme') && f.house === 'Acme Mutual Fund' && /Flexi/.test(f.category), 'fundnav: name, fund house and category come through');
+  ok(ctx.fundnav_({ code: '999' }).error && ctx.fundnav_({ code: '' }).error, 'fundnav: an unknown or empty code gives a plain error');
+  const e = load((u, o, r) => r(200, { meta: {}, data: [] }));
+  ok(e.ctx.fundnav_({ code: '5' }).error, 'fundnav: no history gives a plain error');
+}
 console.log(bad ? bad + ' failed' : 'all passed'); process.exit(bad ? 1 : 0);
